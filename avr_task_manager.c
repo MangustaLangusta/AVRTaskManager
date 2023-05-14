@@ -1,40 +1,48 @@
 //avr_task_manager.c
 
+#include "avr_task_manager.h"
+
 static AVRTime time;
 
-unsigned char InitTaskManager(AVRTaskManager &task_manager){
+unsigned char InitTaskManager(struct AVRTaskManager *task_manager){
 	//Инициализация полей
-	task_manager.root_element = NULL;
+	task_manager->root_element = NULL;
 	//Инициализация таймера-счетчика
-	EnableTimer()
+	EnableTimer();
 	//Разрешение глобальных прерываний
 	sei();
 	return 1;
 }
 
-unsigned char CreateTask(AVRTaskManager &task_manager, AVRTaskID new_ID, const void* new_handler, AVRTaskPeriod new_period){
-	AVRTasksListElement* new_task_list_element;
-	AVRTask new_task;
+unsigned char CreateTask(struct AVRTaskManager *task_manager, AVRTaskID new_ID, const void* new_handler, AVRTaskPeriod new_period){
+	struct AVRTasksListElement* new_task_list_element;
+	struct AVRTask new_task;
 
 	new_task.ID = new_ID;
 	new_task.period = new_period;
 	new_task.handler = new_handler;
+	new_task.next_execution_time = time + new_period;
 
-	new_task_list_element = malloc(AVRTasksListElement);
+	new_task_list_element = malloc(sizeof(struct AVRTasksListElement));
 	if(new_task_list_element == NULL)
 		return 0;
 	new_task_list_element->task = new_task;
 	new_task_list_element->next = NULL;
 
-	GetLastElement(task_manager)->next = new_task_list_element;
+	//Добавление новой задачи в список задач диспетчера
+	struct AVRTasksListElement* root_elem = GetLastElement(task_manager);
+	if(root_elem != NULL)
+		root_elem->next = new_task_list_element;
+	else
+		task_manager->root_element = new_task_list_element;
 	return 1;
 }
 
-unsigned char KillTask(AVRTaskManager &task_manager, AVRTaskID target_ID){
-	AVRTasksListElement* this_element = task_manager.root_element;
-	AVRTasksListElement* prev_element = NULL;
-	if(task_manager.root_element->task.ID == target_ID){
-		task_manager.root_element = root_element->next;
+unsigned char KillTask(struct AVRTaskManager *task_manager, AVRTaskID target_ID){
+	struct AVRTasksListElement* this_element = task_manager->root_element;
+	struct AVRTasksListElement* prev_element = NULL;
+	if(task_manager->root_element->task.ID == target_ID){
+		task_manager->root_element = task_manager->root_element->next;
 		free(this_element);
 		return 1;
 	}
@@ -52,26 +60,26 @@ unsigned char KillTask(AVRTaskManager &task_manager, AVRTaskID target_ID){
 	return 0;
 }
 
-void DoTasks(AVRTaskManager &task_manager){
-	AVRTasksListElement* this_element = task_manager.root_element;
+void DoTasks(struct AVRTaskManager *task_manager){
+	struct AVRTasksListElement* this_element = task_manager->root_element;
 	//проход по всем задачам
 	while(this_element != NULL){
 		//если пришло время выполнения очередной задачи,
 		//вызов обработчика задачи и установка времени следующего выполнения
 		if(this_element->task.next_execution_time < time){
-			this_element->task.next_execution_time = time + this_element.task.period;
+			this_element->task.next_execution_time = time + this_element->task.period;
 			this_element->task.handler();
 		}
 		//переход на следующую задачу
 		this_element = this_element->next;
 	}
 	//Обнуление счетчика времени в случае, если его значение достигло половины доступного макс значения
-	ReduceTimeCounter(task_manager);
+	//ReduceTimeCounter(task_manager);
 }
 
-AVRTasksListElement* GetLastElement(const AVRTaskManager &task_manager){
-	AVRTasksListElement* current_element;
-	current_element = task_manager.root_element;
+struct AVRTasksListElement* GetLastElement(const struct AVRTaskManager *task_manager){
+	struct AVRTasksListElement* current_element;
+	current_element = task_manager->root_element;
 	if(current_element == NULL)
 		return NULL;
 	while(current_element->next != NULL)
@@ -93,13 +101,13 @@ void EnableTimer()
 	TCCR2=(1<<WGM21)|(1<<CS21)|(1<<CS20);				//Запуск таймера 2 в режиме "Сброс при совпадении". Коэффициент деления 64.
 }
 
-void ReduceTimeCounter(AVRTaskManager &task_manager){
+void ReduceTimeCounter(struct AVRTaskManager *task_manager){
 	//Если глобальный счетчик времени все еще меньше половины доступного значения, выход из функции
 	if( !(time >> (sizeof(AVRTime) >> 1)) )
 		return;
 
 	//проход по всем задачам
-	AVRTasksListElement* this_element = task_manager.root_element;
+	struct AVRTasksListElement* this_element = task_manager->root_element;
 	while(this_element != NULL){
 		//уменьшение времени выполнения задачи на текущее значение time
 		if(this_element->task.next_execution_time <= time)
